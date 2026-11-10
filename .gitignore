@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-production/
+.env
+.env.*
+!.env.example
+*.local
+.firebase/
+firebase-debug*.log

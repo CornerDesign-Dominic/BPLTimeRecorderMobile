@@ -1,0 +1,11 @@
+{
+  "name": "bpl-time-recorder-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": { "dev": "vite --host 127.0.0.1", "build": "vite build", "build:dev": "node scripts/build-dev.js", "build:prod": "node scripts/build-prod.js", "preview": "vite preview --host 127.0.0.1", "test": "node --test src/lib/*.test.js scripts/*.test.js", "lint": "eslint ." },
+  "engines": { "node": ">=22.12.0" },
+  "dependencies": { "firebase": "12.18.0", "react": "19.2.8", "react-dom": "19.2.8" },
+  "devDependencies": { "@vitejs/plugin-react": "6.1.1", "vite": "8.3.7", "eslint": "10.14.0", "@eslint/js": "10.0.1", "globals": "16.5.0", "fake-indexeddb": "6.2.4" },
+  "overrides": { "@grpc/grpc-js": "1.14.7", "minimatch": "11.0.1" }
+}
