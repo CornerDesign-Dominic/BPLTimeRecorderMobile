@@ -42,3 +42,18 @@ export function calculateVacationYearBalance({ annualVacationEntitlement, vacati
 
   return { annualEntitlement, availableDays, carryBalance, isTrackingStartYear, remainingDays, takenDays }
 }
+
+// Use the existing balance rules. Finished and planned bookings partition the
+// approved/manual days; pending and follow-up requests never consume days twice.
+export function vacationOverview({ entries = [], year, today, ...profile }) {
+  const balance = calculateVacationYearBalance({ ...profile, entries, year })
+  const booked = entries.filter(entry => isVacationTaken(entry) && overlapsYear(entry, year))
+  const completedDays = booked.filter(entry => entry.endDate < today).reduce((sum, entry) => sum + (Number(entry.days) || 0), 0)
+  const plannedDays = booked.filter(entry => entry.endDate >= today).reduce((sum, entry) => sum + (Number(entry.days) || 0), 0)
+  return {
+    budgetDays: balance.remainingDays === null ? null : balance.remainingDays + balance.takenDays,
+    completedDays,
+    plannedDays,
+    remainingDays: balance.remainingDays,
+  }
+}

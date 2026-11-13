@@ -162,3 +162,29 @@ Lokale Prüfung: `npm test`, `npm run test:ui`, `npm run lint`, `npm run build`.
 Der Build ohne Umgebungsdatei ist ausschließlich eine Kompilierungsprüfung;
 es wurden keine Firebase-Zugriffe mit echten Konten und keine Deploys ausgeführt.
 Vor der späteren Paketfreigabe folgt die Abnahme auf dem echten Handy gegen Dev.
+
+## Vorbereitete Urlaubsübersicht (13.11.2026, noch nicht veröffentlicht)
+
+Im selben lokalen Arbeitsbranch liegt jetzt auch die kompakte Urlaubsseite:
+vier Kacheln in einem 2x2-Raster für Jahreskontingent, genommen, geplant und noch
+verfügbar. Sie beziehen sich immer auf das laufende Berliner Kalenderjahr.
+Der bestehende Urlaubsrechner bleibt die Grundlage; das Kontingent berücksichtigt
+auch manuelle Kontokorrekturen. Genommen zählt abgeschlossene genehmigte/manuell
+erfasste normale Urlaube, geplant genehmigte/manuell erfasste kommende und laufende
+Urlaube. Laufende Urlaube werden bewusst nicht tageweise geschätzt aufgeteilt.
+Offene, abgelehnte und Folgeanträge werden nicht zusätzlich vom Rest abgezogen;
+Sonderurlaub und Überstundenabbau verbrauchen keine normalen Urlaubstage.
+
+Die Jahresauswahl ist ausschließlich bei der Antragsliste. Filter: alle,
+anstehend/laufend, vergangen, offene Anfragen (einschließlich offener Folgeanträge)
+und abgelehnt/beendet. Jahresübergreifende Anträge erscheinen in jedem betroffenen
+Jahr; die bestehende jahresbezogene Saldenberechnung wurde nicht verändert.
+
+Ein Button unter der Liste öffnet kommende Feiertage und Urlaubssperren im
+Modal. Name und Terminart stehen nebeneinander, Datum/Zeitraum kompakt darunter.
+Die bisherige Begrenzung auf 20 Kalendertermine entfällt. Der Kopf zeigt auf
+Urlaub und Konto keinen Status; der Arbeitsstatus bleibt auf der Zeitseite.
+Die bestehenden Antrags-, Änderungs-, Storno- und Rücknahmeabläufe bleiben erhalten.
+
+Prüfungen: 26 Node-Tests, DOM-Regression für Zeit und Urlaub, ESLint und Web-Build
+erfolgreich. Kein Push und kein Deploy; Handyabnahme gegen Dev folgt beim Paket.
