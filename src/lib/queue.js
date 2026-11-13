@@ -48,6 +48,11 @@ export async function archiveStamp(uid, eventId) {
     await transaction('queue', 'readwrite', store => store.put({ ...record, resolvedAt: new Date().toISOString(), resolution: 'confirmed_resolved_in_web' }))
   })
 }
+export function queueFailure(error) {
+  const retryable = ['functions/unavailable', 'functions/deadline-exceeded', 'functions/internal', 'auth/network-request-failed'].includes(error?.code) || /failed to fetch|fetch failed|network request failed|networkerror|internetverbindung/i.test(error?.message || '')
+  return { retryable, error: retryable ? 'Die Verbindung zum Server ist unterbrochen. Deine Buchung bleibt auf diesem Gerät gespeichert.' : error?.message || 'Übertragung fehlgeschlagen.' }
+}
+
 export function deferredPayload(record, now = Date.now()) {
   return { eventId: record.eventId, type: record.type, at: record.at, offline: record.offline || now - Date.parse(record.at) > 60000 }
 }
@@ -140,7 +145,7 @@ export function syncQueue(uid, send, online = () => navigator.onLine) {
         await acknowledgeStamp(record, result)
         accepted.push(record.eventId)
       } catch (error) {
-        await transaction('queue', 'readwrite', store => store.put({ ...record, offline: true, error: error.message || 'Übertragung fehlgeschlagen.', attemptedAt: new Date().toISOString() }))
+        await transaction('queue', 'readwrite', store => store.put({ ...record, offline: true, ...queueFailure(error), attemptedAt: new Date().toISOString() }))
         // Preserve order after a conflict. Nothing is discarded or silently
         // turned into a correction; a manager can resolve the original booking.
         blockedDays.add(day)

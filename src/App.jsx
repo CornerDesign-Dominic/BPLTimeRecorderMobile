@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { auth, db, call, configurationMissing } from './lib/firebase.js'
-import { cacheProfile, cacheWorkspace, readSnapshot, clearSnapshot, listQueue, queueStamp, syncQueue, archiveStamp, listArchived, workspaceCoversStamp } from './lib/queue.js'
+import { cacheProfile, cacheWorkspace, readSnapshot, clearSnapshot, listQueue, queueStamp, syncQueue, archiveStamp, listArchived, workspaceCoversStamp, queueFailure } from './lib/queue.js'
 import { permitted } from './lib/access.js'
 import { addDays, dateKey, formatDate, formatTime, minutes, weekStart } from './lib/dates.js'
 import { Icon, Modal, Notice } from './components/ui.jsx'
@@ -67,7 +67,8 @@ export default function App() {
 
   const synchronize = useCallback(async uid => {
     if (!navigator.onLine || !hasTimeAccess(uid)) return
-    if (hasTimeAccess(uid, true)) await syncQueue(uid, payload => {
+    let accepted = []
+    if (hasTimeAccess(uid, true)) accepted = await syncQueue(uid, payload => {
       if (auth.currentUser?.uid !== uid) throw new Error('Bitte mit dem ursprünglichen Konto anmelden, um diese Buchung zu übertragen.')
       if (!hasTimeAccess(uid, true)) throw new Error('Die Berechtigung zum Stempeln fehlt.')
       return call('stampTime', { ...payload, expectedUserId: uid }, uid)
@@ -77,6 +78,10 @@ export default function App() {
     if (currentUid.current !== uid) return
     setQueue(records)
     await refresh(uid)
+    if (hasTimeAccess(uid)) {
+      setError('')
+      if (accepted.length) setMessage(accepted.length === 1 ? 'Buchung übertragen.' : 'Buchungen übertragen.')
+    }
   }, [hasTimeAccess, refresh])
 
   useEffect(() => {
@@ -112,7 +117,7 @@ export default function App() {
         const ownWorkspace = permitted(profile, 'timeTracking') && cached.workspace ? { ...cached.workspace, models: [], employees: [] } : null
         currentProfile.current = profile
         setSession({ user, profile }); setWorkspace(ownWorkspace); setQueue(queued); setArchived(localArchive)
-      } catch (failure) { if (ticket === generation.current) setError(failure.message) }
+      } catch (failure) { if (ticket === generation.current) setError(queueFailure(failure).error) }
       finally { if (ticket === generation.current) setLoading(false) }
     })
   }, [])
@@ -148,7 +153,7 @@ export default function App() {
   useEffect(() => {
     if (!session || !online) return
     let alive = true
-    synchronize(session.user.uid).catch(failure => { if (alive) setError(failure.message) })
+    synchronize(session.user.uid).catch(failure => { if (alive) setError(queueFailure(failure).error) })
     const interval = setInterval(() => synchronize(session.user.uid).catch(() => {}), 60000)
     return () => { alive = false; clearInterval(interval) }
   }, [session, online, synchronize, today])
@@ -174,13 +179,13 @@ export default function App() {
         if (currentUid.current !== uid) return
         setMessage(remaining.some(record => record.eventId === event.eventId && !record.acknowledgedAt) ? 'Auf diesem Gerät gespeichert. Die Übertragung steht noch aus.' : 'Buchung übertragen.')
       }
-    } catch (failure) { if (currentUid.current === uid) setError(failure.message) }
+    } catch (failure) { if (currentUid.current === uid) setError(queueFailure(failure).error) }
     finally { if (currentUid.current === uid) setBusy(false) }
   }
 
   async function beginResolution(record) {
     const uid = session.user.uid
-    try { await refresh(uid); if (currentUid.current === uid) setResolving(record) } catch (failure) { if (currentUid.current === uid) setError(failure.message) }
+    try { await refresh(uid); if (currentUid.current === uid) setResolving(record) } catch (failure) { if (currentUid.current === uid) setError(queueFailure(failure).error) }
   }
   async function resolveBooking() {
     const uid = session.user.uid
@@ -191,7 +196,7 @@ export default function App() {
       if (currentUid.current !== uid) return
       setQueue(records); setArchived(archive); setResolving(null)
       await synchronize(uid)
-    } catch (failure) { if (currentUid.current === uid) setError(failure.message) }
+    } catch (failure) { if (currentUid.current === uid) setError(queueFailure(failure).error) }
     finally { if (currentUid.current === uid) setBusy(false) }
   }
 
@@ -216,9 +221,9 @@ export default function App() {
   const currentStatus = { working: 'Bei der Arbeit', break: 'In Pause', away: 'Abwesend' }[status]
   return <div className="app"><header className="app-header"><a className="brand" href="/" aria-label="Drehpunkt Meine Zeit"><img src="/icon.svg" alt=""/><span>DREHPUNKT<small>Meine Zeit</small></span></a>{timeRight && tab === 'time' && <span className={`header-status header-status--${status}`} role="status"><i/>{currentStatus}</span>}</header><main>
     {!online && <Notice>Ohne Internet: Nur Stempeln ist möglich. Buchungen bleiben bis zur Übertragung auf diesem Gerät.</Notice>}
-    {pending.length > 0 && <Notice danger={pending.some(item => item.error)}><strong>{pending.length} {pending.length === 1 ? 'Buchung wartet' : 'Buchungen warten'} auf Übertragung.</strong>{pending.find(item => item.error)?.error && <p>{pending.find(item => item.error).error} Die Buchung bleibt erhalten. Bitte bei einem Konflikt den Zeitmanager kontaktieren.</p>}{online && <button className="text-button" disabled={busy} onClick={() => synchronize(session.user.uid).catch(failure => setError(failure.message))}>Erneut übertragen</button>}</Notice>}
-    {pending.filter(item => item.error).map(item => <div className="queue-conflict" key={item.eventId}><span>{formatDate(dateKey(item.at))} · {eventLabels[item.type]} · {formatTime(item.at)}</span><button className="text-button" disabled={!online || busy} onClick={() => beginResolution(item)}>Bereits im Web geklärt?</button></div>)}
-    {error && <Notice danger>{error}</Notice>}{message && <p className="feedback" role="status">{message}</p>}
+    {pending.length > 0 && <Notice danger={pending.some(item => item.error && !item.retryable)}><strong>{pending.length} {pending.length === 1 ? 'Buchung wartet' : 'Buchungen warten'} auf Übertragung.</strong>{pending.find(item => item.error)?.error && <p>{pending.find(item => item.error).error} {pending.find(item => item.error).retryable ? 'Die Übertragung wird bei Verbindung erneut versucht.' : 'Die Buchung bleibt erhalten. Bitte bei einem Konflikt den Zeitmanager kontaktieren.'}</p>}{online && <button className="text-button" disabled={busy} onClick={() => synchronize(session.user.uid).catch(failure => setError(queueFailure(failure).error))}>Erneut übertragen</button>}</Notice>}
+    {pending.filter(item => item.error && !item.retryable).map(item => <div className="queue-conflict" key={item.eventId}><span>{formatDate(dateKey(item.at))} · {eventLabels[item.type]} · {formatTime(item.at)}</span><button className="text-button" disabled={!online || busy} onClick={() => beginResolution(item)}>Bereits im Web geklärt?</button></div>)}
+    {error && !pending.some(item => item.error && item.retryable) && <Notice danger>{error}</Notice>}{message && !pending.some(item => item.error && item.retryable) && <p className="feedback" role="status">{message}</p>}
     {tab === 'time' && (!timeRight ? <Notice>Für die Zeiterfassung fehlt die Freigabe. Bitte die Administration kontaktieren.</Notice> : <>
       <section className="clock-section"><div className="clock">{formatTime(now)}</div><p className="date">{new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Berlin' }).format(now)}</p></section>
       <section className={`stamp-section stamp-section--${status}`} aria-label="Stempeln"><div className="stamp-actions"><button disabled={busy || !editTime || status !== 'away'} onClick={() => stamp('come')}><span className="stamp-circle stamp-circle--primary"><Icon name="play" size={34}/></span>Einstempeln</button><button className={status === 'break' ? 'resume-action' : ''} disabled={busy || !editTime || status === 'away'} onClick={() => stamp(status === 'break' ? 'pause_end' : 'pause_start')}><span className="stamp-circle"><Icon name={status === 'break' ? 'play' : 'pause'} size={33}/></span>{status === 'break' ? 'Pause beenden' : 'Pause'}</button><button disabled={busy || !editTime || status === 'away'} onClick={() => stamp('go')}><span className="stamp-circle"><Icon name="exit" size={33}/></span>Ausstempeln</button></div></section>
@@ -226,7 +231,7 @@ export default function App() {
 
     </>)}
     {tab === 'vacation' && (vacationRight ? <Vacation uid={session.user.uid} online={online} editable={permitted(session.profile, 'vacation', true)}/> : <Notice>Für Urlaub fehlt die Freigabe. Bitte die Administration kontaktieren.</Notice>)}
-    {tab === 'account' && <><div className="page-heading"><p className="eyebrow">Drehpunkt</p><h1>Mein Konto</h1></div><section className="card"><h2>{session.profile.firstName} {session.profile.lastName}</h2><p className="muted">{session.user.email}</p><p>Du nutzt dieselbe Anmeldung wie in Drehpunkt.</p><button className="button button--secondary" disabled={!online || busy} onClick={async () => { setError(''); try { await session.user.reload(); await synchronize(session.user.uid); setMessage('Daten aktualisiert.') } catch (failure) { setError(failure.message) } }}>Daten aktualisieren</button><button className="button" disabled={busy} onClick={logout}>Abmelden</button>{pending.length > 0 && <Notice>Deine noch nicht übertragenen Stempel bleiben auf diesem Gerät und werden beim nächsten Anmelden mit diesem Konto übertragen. Bitte Browserdaten vorher nicht löschen.</Notice>}</section><InstallAppCard installation={installation} /></>}
+    {tab === 'account' && <><div className="page-heading"><p className="eyebrow">Drehpunkt</p><h1>Mein Konto</h1></div><section className="card"><h2>{session.profile.firstName} {session.profile.lastName}</h2><p className="muted">{session.user.email}</p><p>Du nutzt dieselbe Anmeldung wie in Drehpunkt.</p><button className="button button--secondary" disabled={!online || busy} onClick={async () => { setError(''); try { await session.user.reload(); await synchronize(session.user.uid); setMessage('Daten aktualisiert.') } catch (failure) { setError(queueFailure(failure).error) } }}>Daten aktualisieren</button><button className="button" disabled={busy} onClick={logout}>Abmelden</button>{pending.length > 0 && <Notice>Deine noch nicht übertragenen Stempel bleiben auf diesem Gerät und werden beim nächsten Anmelden mit diesem Konto übertragen. Bitte Browserdaten vorher nicht löschen.</Notice>}</section><InstallAppCard installation={installation} /></>}
     {tab === 'account' && workspace?.account && <section className="card"><h2>Zeitkonto</h2><p className="muted small">Beginn {formatDate(workspace.account.startDate)} · Anfangssaldo {minutes(workspace.account.openingBalanceMinutes, true)}</p><p>Gesamtsaldo <strong>{minutes(workspace.balanceMinutes, true)}</strong>{workspace.balanceProvisional && <small className="muted"> · vorläufig</small>}</p><p className="muted small">Genehmigter Überstundenabbau wird gesondert vom Zeitkonto abgezogen. Die Einträge findest du unter Zeit und Urlaub.</p></section>}
     {tab === 'account' && workspace?.history?.length > 0 && <section className="card"><h2>Änderungsverlauf</h2>{workspace.history.slice(0, 30).map(item => <details className="calendar-row" key={item.id}><summary>{formatDate(item.date)} · {item.kind === 'addition' ? 'Nachtrag' : 'Korrektur'}</summary><small>{item.createdAt ? `${formatDate(dateKey(item.createdAt))} · ${formatTime(item.createdAt)}` : ''} · {item.createdBy === session.user.uid ? 'Du' : item.createdByName || 'Berechtigte Person'}</small><p className="small">{({ forgot_stamp: 'Stempeln vergessen', forgot_break: 'Pause vergessen', wrong_booking: 'Fehlbuchung', other: 'Sonstiges' })[item.reason] || item.reason}{item.note ? ` · ${item.note}` : ''}</p><p className="small muted">Vorher: {(item.before || []).map(event => `${eventLabels[event.type]} ${formatTime(event.at)}`).join(' · ') || 'Keine Buchungen'}</p><p className="small">Danach: {(item.after || []).map(event => `${eventLabels[event.type]} ${formatTime(event.at)}`).join(' · ') || 'Keine Buchungen'}</p></details>)}</section>}
     {tab === 'account' && archived.length > 0 && <section className="card"><h2>Lokal geklärte Buchungen</h2><p className="muted small">Im Web geklärt und auf diesem Gerät archiviert. Diese Belege werden nicht erneut übertragen.</p>{archived.map(item => <div className="calendar-row" key={item.eventId}><strong>{formatDate(dateKey(item.at))} · {eventLabels[item.type]} · {formatTime(item.at)}</strong><small>Archiviert am {formatDate(dateKey(item.resolvedAt))} um {formatTime(item.resolvedAt)}</small></div>)}</section>}

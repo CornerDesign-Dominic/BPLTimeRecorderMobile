@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { queueStamp, listQueue, syncQueue, cacheProfile, cacheWorkspace, readSnapshot, clearSnapshot, deferredPayload, archiveStamp, listArchived } from './queue.js'
+import { queueStamp, listQueue, syncQueue, cacheProfile, cacheWorkspace, readSnapshot, clearSnapshot, deferredPayload, archiveStamp, listArchived, queueFailure } from './queue.js'
 import { permitted } from './access.js'
 import { dateKey } from './dates.js'
 
@@ -140,4 +140,20 @@ test('a conflict blocks only its own day; explicit resolution archives original 
   assert.deepEqual((await listQueue('conflict-days')).map(item => item.eventId), ['later'])
   const proof = (await listArchived('conflict-days'))[0]
   assert.equal(proof.eventId, 'bad'); assert.equal(proof.at, '2026-11-09T07:00:00Z'); assert.equal(proof.resolution, 'confirmed_resolved_in_web')
+})
+
+
+test('network failure stays retryable and does not become a booking conflict', async () => {
+  assert.equal(queueFailure(new TypeError('Failed to fetch')).retryable, true)
+  assert.equal(queueFailure({ code: 'functions/unavailable', message: 'unavailable' }).retryable, true)
+  assert.equal(queueFailure({ code: 'functions/failed-precondition', message: 'Fehlende Buchung' }).retryable, false)
+  const uid = 'network-retry'
+  await queueStamp(uid, { eventId: 'network-come', type: 'come', at: new Date().toISOString(), offline: false })
+  await syncQueue(uid, async () => { throw new TypeError('Failed to fetch') }, () => true)
+  const [pending] = await listQueue(uid)
+  assert.equal(pending.retryable, true)
+  assert.ok(pending.error.includes('Verbindung zum Server'))
+  assert.ok(!pending.error.includes('fetch'))
+  await syncQueue(uid, async () => accepted(), () => true)
+  assert.equal((await listQueue(uid)).length, 0)
 })
