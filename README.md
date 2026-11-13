@@ -134,3 +134,31 @@ npm run build
 Die automatisierten Tests prüfen IndexedDB-Transaktionen mit `fake-indexeddb`, Kontentrennung, Rechteentzug während eines Übersichtsabrufs, verlorene Serverbestätigungen, bestätigte Stempel bei abgebrochenem Übersichtsabruf, Konflikte zwischen Tagen, lokale Archivierung und Berliner Kalender-/Sommerzeitgrenzen. Die Abnahme auf einem echten Handy erfolgt gegen Firebase Dev.
 
 Vor Freigabe mit echten Testkonten prüfen: Anmeldung/App Check, Rechteentzug, alle Urlaubsstatuswechsel, parallele Web-/Handy-Korrekturen, Offline-Neustart nach erstem Laden, Netzwerkabbruch zwischen Serverannahme und Antwort, Konfliktklärung und Wiederanmeldung mit einem anderen Konto. Ohne lokale Firebase-Konfiguration sind diese Integrationsprüfungen noch offen.
+
+## Vorbereitete mobile Oberfläche (13.11.2026, noch nicht veröffentlicht)
+
+Lokaler Arbeitsbranch: `codex/mobile-time-overview`. Keine Änderung am Backend,
+keine Veröffentlichung an Dev oder Produktion. Die bestehende Stempel- und
+Offline-Warteschlange wird weiterverwendet.
+
+- Arbeitsstatus statt Online-Anzeige im Kopf; Uhrzeit/Datum, danach Stempelaktionen.
+- Eine kompakte Card mit den Reitern Heute, Woche und Gesamt. Keine Monats- oder
+  Wochen-Buchungstabellen auf der Zeitseite.
+- Tagespfeile erlauben ältere Tage, aber keine Zukunft. Ältere Tage außerhalb
+  des geladenen Bereichs werden mit `ownOnly` separat angefragt. Offline gibt
+  es für nicht geladene Tage einen Hinweis statt einer erfundenen leeren Liste.
+- Einzelbuchungen chronologisch mit Stift; eigener Grund je Änderung/Nachtrag.
+  Heute und die sieben vergangenen Berliner Kalendertage sind bearbeitbar.
+  Ältere Tage bleiben lesbar. Löschen benötigt Mülleimer, Bestätigung und Grund.
+- Das Backend erhält weiterhin die vollständige Tagesrevision. Nur die gewählte
+  Buchung ändert sich; andere IDs und exakte Stempelzeiten bleiben erhalten.
+  Revisionskonflikte erfordern Neuladen, fehlgeschlagener Übersichtsabgleich
+  nach bestätigtem Speichern erlaubt kein erneutes Speichern derselben Änderung.
+- Wochenbalken mit Pausenfarbe und Ist/Soll; Wochensaldo bis heute aus den
+  bestehenden Tageswerten. Gesamt zeigt ausschließlich den Kontosaldo mit
+  Plus/Minus und gegebenenfalls dem Hinweis auf einen vorläufigen Stand.
+
+Lokale Prüfung: `npm test`, `npm run test:ui`, `npm run lint`, `npm run build`.
+Der Build ohne Umgebungsdatei ist ausschließlich eine Kompilierungsprüfung;
+es wurden keine Firebase-Zugriffe mit echten Konten und keine Deploys ausgeführt.
+Vor der späteren Paketfreigabe folgt die Abnahme auf dem echten Handy gegen Dev.
